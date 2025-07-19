@@ -3,8 +3,8 @@
 import React, { createContext, useContext, useReducer, useEffect, type Dispatch, type ReactNode } from 'react';
 import { type AppState, type Action, type Player } from '@/types';
 import { useToast } from '@/hooks/use-toast';
-import { database } from '@/lib/firebase';
-import { ref, onValue, set, onDisconnect, serverTimestamp, get } from "firebase/database";
+import { database, isFirebaseConfigured } from '@/lib/firebase';
+import { ref, onValue, set, onDisconnect, serverTimestamp, get, remove } from "firebase/database";
 
 const initialState: AppState = {
   roomCode: '',
@@ -26,17 +26,7 @@ const initialState: AppState = {
 const reducer = (state: AppState, action: Action): AppState => {
   switch (action.type) {
     case 'SET_STATE':
-        return action.payload;
-    case 'SET_INITIAL_STATE': {
-      const { roomCode, user, players, isAdmin } = action.payload;
-      return {
-        ...initialState,
-        roomCode,
-        user,
-        players,
-        isAdmin,
-      };
-    }
+        return { ...state, ...action.payload };
     case 'START_GAME': {
         const isLockdown = action.payload.config.mode === 'single_buzz' && !!action.payload.config.designatedPlayerId;
         return {
@@ -88,9 +78,6 @@ const reducer = (state: AppState, action: Action): AppState => {
             buzzerActive: newTime <= 0,
         };
     }
-    case 'UPDATE_PLAYERS': {
-        return { ...state, players: action.payload };
-    }
     default:
       return state;
   }
@@ -104,23 +91,53 @@ export const GameProvider = ({ children, roomCode, userNickname }: { children: R
   const userId = React.useMemo(() => `user-${Math.random().toString(36).substring(2, 9)}`, []);
 
   const dispatchWithBroadcast = (action: Action) => {
+    if (!isFirebaseConfigured) {
+        console.error("Firebase is not configured. Cannot broadcast action.");
+        // We can also dispatch locally to see UI changes without network
+        const localState = reducer(state, action);
+        dispatch({ type: 'SET_STATE', payload: localState});
+        return;
+    }
     const newState = reducer(state, action);
     const roomRef = ref(database, `rooms/${roomCode}`);
     set(roomRef, newState);
   };
   
   useEffect(() => {
+    if (!isFirebaseConfigured) {
+      console.warn("Firebase is not configured. The app will run in offline mode.");
+      const user = { id: userId, name: userNickname };
+      const localState = {
+        ...initialState,
+        roomCode,
+        user,
+        players: [user],
+        isAdmin: true,
+      };
+      dispatch({ type: 'SET_STATE', payload: localState });
+      return;
+    }
+    
     if (!roomCode || !userNickname) return;
     
     const roomRef = ref(database, `rooms/${roomCode}`);
-    const playerRef = ref(database, `rooms/${roomCode}/players/${userId}`);
     const user = { id: userId, name: userNickname };
 
     const unsubscribe = onValue(roomRef, async (snapshot) => {
-        const roomData = snapshot.val() as AppState;
+        let roomData = snapshot.val() as AppState | null;
 
+        const playersRef = ref(database, `rooms/${roomCode}/players`);
+        const playerRef = ref(database, `rooms/${roomCode}/players/${userId}`);
+        
         if (roomData) {
-            dispatch({ type: 'SET_STATE', payload: roomData });
+             const playersSnap = await get(playersRef);
+             let playersList: Player[] = playersSnap.exists() ? Object.values(playersSnap.val()) : [];
+             if (!playersList.some(p => p.id === userId)) {
+                playersList.push(user);
+                await set(playersRef, playersList);
+             }
+             const amIAdmin = playersList[0]?.id === userId;
+             dispatch({ type: 'SET_STATE', payload: { ...roomData, user, isAdmin: amIAdmin, players: playersList } });
         } else {
             const initialRoomState: AppState = {
                 ...initialState,
@@ -132,42 +149,44 @@ export const GameProvider = ({ children, roomCode, userNickname }: { children: R
             await set(roomRef, initialRoomState);
             dispatch({ type: 'SET_STATE', payload: initialRoomState });
         }
-
-        const playersRef = ref(database, `rooms/${roomCode}/players`);
-        const snapshotPlayers = await get(playersRef);
-        let playersList: Player[] = snapshotPlayers.exists() ? Object.values(snapshotPlayers.val()) : [];
         
-        if (!playersList.some(p => p.id === userId)) {
-          playersList.push(user);
-        }
-        
-        await set(ref(database, `rooms/${roomCode}/players`), playersList);
-        
-        const amIAdmin = playersList[0]?.id === userId;
-        dispatch({ type: 'SET_STATE', payload: { ...roomData, user, isAdmin: amIAdmin, players: playersList }});
-
         onDisconnect(playerRef).remove();
-        onDisconnect(ref(database, `rooms/${roomCode}/players`)).set(playersList.filter(p => p.id !== userId));
     });
 
     return () => {
         unsubscribe();
         const playerRef = ref(database, `rooms/${roomCode}/players/${userId}`);
-        set(playerRef, null);
+        remove(playerRef);
     };
 
   }, [roomCode, userNickname, userId]);
 
 
   useEffect(() => {
-    if (state.isLockdown && state.lockdownTimer > 0) {
+    if (state.isLockdown && state.lockdownTimer > 0 && isFirebaseConfigured) {
       const timer = setInterval(() => {
         dispatchWithBroadcast({ type: 'TICK_LOCKDOWN' });
       }, 1000);
       return () => clearInterval(timer);
     }
-  }, [state.isLockdown, state.lockdownTimer]);
+  }, [state.isLockdown, state.lockdownTimer, state, dispatchWithBroadcast]);
 
+
+  if (!isFirebaseConfigured) {
+    return (
+       <div className="flex h-screen w-full flex-col items-center justify-center bg-background p-4 text-center">
+          <h1 className="text-2xl font-bold text-destructive">Firebase non configuré</h1>
+          <p className="mt-2 max-w-md text-muted-foreground">
+            Veuillez mettre à jour le fichier <code className="font-mono bg-muted p-1 rounded">src/lib/firebase.ts</code> avec vos propres informations d'identification Firebase pour activer le mode multijoueur.
+          </p>
+          <div className="mt-4">
+            <GameContext.Provider value={{ state, dispatch: dispatchWithBroadcast }}>
+              {children}
+            </GameContext.Provider>
+          </div>
+       </div>
+    )
+  }
 
   return <GameContext.Provider value={{ state, dispatch: dispatchWithBroadcast }}>{children}</GameContext.Provider>;
 };

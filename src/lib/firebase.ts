@@ -1,9 +1,8 @@
 
-import { initializeApp, getApps } from "firebase/app";
+import { initializeApp, getApps, type FirebaseOptions } from "firebase/app";
 import { getDatabase } from "firebase/database";
 
-const firebaseConfig = {
-  // TODO: Remplacez par votre configuration Firebase
+const firebaseConfig: FirebaseOptions = {
   apiKey: "YOUR_API_KEY",
   authDomain: "YOUR_AUTH_DOMAIN",
   databaseURL: "YOUR_DATABASE_URL",
@@ -13,13 +12,17 @@ const firebaseConfig = {
   appId: "YOUR_APP_ID"
 };
 
+export const isFirebaseConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY";
+
 let app;
-if (!getApps().length) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApps()[0];
+if (isFirebaseConfigured) {
+    if (!getApps().length) {
+      app = initializeApp(firebaseConfig);
+    } else {
+      app = getApps()[0];
+    }
 }
 
-const database = getDatabase(app);
+const database = app ? getDatabase(app) : null;
 
 export { database };

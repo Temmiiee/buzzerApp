@@ -27,8 +27,7 @@ export interface AppState {
 }
 
 export type Action =
-  | { type: 'SET_STATE'; payload: AppState }
-  | { type: 'SET_INITIAL_STATE'; payload: { roomCode: string; user: Player, players: Player[], isAdmin: boolean } }
+  | { type: 'SET_STATE'; payload: Partial<AppState> }
   | { type: 'UPDATE_PLAYERS'; payload: Player[] }
   | { type: 'START_GAME'; payload: { config: GameConfig } }
   | { type: 'SET_CONFIG'; payload: GameConfig }
