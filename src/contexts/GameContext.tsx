@@ -21,12 +21,6 @@ const initialState: AppState = {
   isLockdown: false,
 };
 
-const FAKE_PLAYERS: Player[] = [
-    { id: 'fp1', name: 'Jeanne' },
-    { id: 'fp2', name: 'Thomas' },
-    { id: 'fp3', name: 'Léa' },
-];
-
 const reducer = (state: AppState, action: Action): AppState => {
   switch (action.type) {
     case 'SET_INITIAL_STATE': {
@@ -103,29 +97,11 @@ const GameContext = createContext<{ state: AppState; dispatch: Dispatch<Action> 
 
 export const GameProvider = ({ children, roomCode, userNickname }: { children: ReactNode; roomCode: string; userNickname: string }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const { toast } = useToast();
 
   useEffect(() => {
     const user: Player = { id: `user-${Date.now()}`, name: userNickname };
     dispatch({ type: 'SET_INITIAL_STATE', payload: { roomCode, user } });
   }, [roomCode, userNickname]);
-
-  useEffect(() => {
-    if (state.phase === 'lobby' && state.isAdmin) {
-        let playerIndex = 0;
-        const interval = setInterval(() => {
-            if (playerIndex < FAKE_PLAYERS.length) {
-                const newPlayer = FAKE_PLAYERS[playerIndex];
-                dispatch({ type: 'ADD_PLAYER', payload: newPlayer });
-                toast({ title: `${newPlayer.name} a rejoint la salle !` });
-                playerIndex++;
-            } else {
-                clearInterval(interval);
-            }
-        }, 2000); // Add a fake player every 2 seconds
-        return () => clearInterval(interval);
-    }
-  }, [state.phase, state.isAdmin, toast]);
 
   useEffect(() => {
     if (state.isLockdown && state.lockdownTimer > 0) {
