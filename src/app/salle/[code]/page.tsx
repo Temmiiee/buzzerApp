@@ -1,37 +1,11 @@
-'use client';
-
 import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { GameProvider } from '@/contexts/GameContext';
-import RoomView from './_components/RoomView';
+import RoomPageClient from './_components/RoomPageClient';
 import { Skeleton } from '@/components/ui/skeleton';
-
-function RoomPageContent({ roomCode }: { roomCode: string }) {
-  const searchParams = useSearchParams();
-  const nickname = searchParams.get('nickname');
-
-  if (!nickname) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">Erreur</h1>
-          <p className="text-muted-foreground">Pseudonyme manquant. Veuillez retourner à l'accueil.</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <GameProvider roomCode={roomCode} userNickname={nickname}>
-      <RoomView />
-    </GameProvider>
-  );
-}
 
 export default function RoomPage({ params }: { params: { code: string } }) {
   return (
     <Suspense fallback={<RoomSkeleton />}>
-      <RoomPageContent roomCode={params.code} />
+      <RoomPageClient roomCode={params.code} />
     </Suspense>
   );
 }
