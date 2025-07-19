@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { type GameConfig } from '@/types';
+import { useEffect } from 'react';
 
 const configSchema = z.object({
   mode: z.enum(['ffa', 'single_buzz']),
@@ -41,12 +42,13 @@ export default function GameConfigModal({ isOpen, onOpenChange }: GameConfigModa
   
   const form = useForm<ConfigFormValues>({
     resolver: zodResolver(configSchema),
-    defaultValues: {
-      mode: state.config.mode,
-      designatedPlayerId: state.config.designatedPlayerId,
-      lockdownPeriod: state.config.lockdownPeriod,
-    },
+    defaultValues: state.config,
   });
+
+  useEffect(() => {
+    form.reset(state.config);
+  }, [state.config, form]);
+
 
   const selectedMode = form.watch('mode');
 

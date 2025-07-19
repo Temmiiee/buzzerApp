@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useReducer, useEffect, type Dispatch, type ReactNode } from 'react';
 import { type AppState, type Action, type Player } from '@/types';
 import { useToast } from '@/hooks/use-toast';
+import { database } from '@/lib/firebase';
+import { ref, onValue, set, onDisconnect, serverTimestamp, get } from "firebase/database";
 
 const initialState: AppState = {
   roomCode: '',
@@ -28,12 +30,11 @@ const reducer = (state: AppState, action: Action): AppState => {
     case 'SET_INITIAL_STATE': {
       const { roomCode, user, players, isAdmin } = action.payload;
       return {
-        ...state,
+        ...initialState,
         roomCode,
         user,
         players,
         isAdmin,
-        phase: 'lobby',
       };
     }
     case 'START_GAME': {
@@ -49,7 +50,7 @@ const reducer = (state: AppState, action: Action): AppState => {
         };
     }
     case 'PRESS_BUZZER':
-        if (!state.buzzerActive) return state;
+        if (!state.buzzerActive || state.buzzerWinner) return state;
         return {
             ...state,
             buzzerActive: false,
@@ -77,14 +78,18 @@ const reducer = (state: AppState, action: Action): AppState => {
         }
     case 'TICK_LOCKDOWN': {
         if (!state.isLockdown || state.lockdownTimer <= 0) {
-            return { ...state, isLockdown: false, lockdownTimer: 0 };
+            return { ...state, isLockdown: false, lockdownTimer: 0, buzzerActive: true };
         }
         const newTime = state.lockdownTimer - 1;
         return {
             ...state,
             lockdownTimer: newTime,
             isLockdown: newTime > 0,
+            buzzerActive: newTime <= 0,
         };
+    }
+    case 'UPDATE_PLAYERS': {
+        return { ...state, players: action.payload };
     }
     default:
       return state;
@@ -93,96 +98,76 @@ const reducer = (state: AppState, action: Action): AppState => {
 
 const GameContext = createContext<{ state: AppState; dispatch: Dispatch<Action> } | undefined>(undefined);
 
-const getStorageKey = (roomCode: string) => `buzzer-eclair-room-${roomCode}`;
-
 export const GameProvider = ({ children, roomCode, userNickname }: { children: ReactNode; roomCode: string; userNickname: string }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
   const { toast } = useToast();
+  const userId = React.useMemo(() => `user-${Math.random().toString(36).substring(2, 9)}`, []);
 
-  const broadcastState = (newState: AppState) => {
-    try {
-      localStorage.setItem(getStorageKey(roomCode), JSON.stringify(newState));
-      window.dispatchEvent(new StorageEvent('storage', { key: getStorageKey(roomCode) }));
-    } catch (error) {
-      console.error("Could not save state to localStorage", error);
-    }
-  };
-  
-  const wrappedDispatch = (action: Action) => {
+  const dispatchWithBroadcast = (action: Action) => {
     const newState = reducer(state, action);
-    dispatch({type: 'SET_STATE', payload: newState});
-    broadcastState(newState);
+    const roomRef = ref(database, `rooms/${roomCode}`);
+    set(roomRef, newState);
   };
   
   useEffect(() => {
-    const storageKey = getStorageKey(roomCode);
+    if (!roomCode || !userNickname) return;
     
-    const user: Player = { id: `user-${Date.now()}`, name: userNickname };
-    let currentState: AppState;
-    
-    try {
-        const savedStateJSON = localStorage.getItem(storageKey);
-        const savedState = savedStateJSON ? JSON.parse(savedStateJSON) : null;
-        
-        if (savedState) {
-            currentState = savedState;
-            if (!currentState.players.find(p => p.name === user.name)) {
-                currentState.players.push(user);
-            }
+    const roomRef = ref(database, `rooms/${roomCode}`);
+    const playerRef = ref(database, `rooms/${roomCode}/players/${userId}`);
+    const user = { id: userId, name: userNickname };
+
+    const unsubscribe = onValue(roomRef, async (snapshot) => {
+        const roomData = snapshot.val() as AppState;
+
+        if (roomData) {
+            dispatch({ type: 'SET_STATE', payload: roomData });
         } else {
-            currentState = {
+            const initialRoomState: AppState = {
                 ...initialState,
                 roomCode,
                 user: user,
                 players: [user],
                 isAdmin: true,
             };
+            await set(roomRef, initialRoomState);
+            dispatch({ type: 'SET_STATE', payload: initialRoomState });
         }
 
-        dispatch({type: 'SET_INITIAL_STATE', payload: { roomCode, user, players: currentState.players, isAdmin: currentState.players[0].id === user.id }});
-        broadcastState(currentState);
+        const playersRef = ref(database, `rooms/${roomCode}/players`);
+        const snapshotPlayers = await get(playersRef);
+        let playersList: Player[] = snapshotPlayers.exists() ? Object.values(snapshotPlayers.val()) : [];
+        
+        if (!playersList.some(p => p.id === userId)) {
+          playersList.push(user);
+        }
+        
+        await set(ref(database, `rooms/${roomCode}/players`), playersList);
+        
+        const amIAdmin = playersList[0]?.id === userId;
+        dispatch({ type: 'SET_STATE', payload: { ...roomData, user, isAdmin: amIAdmin, players: playersList }});
 
-    } catch (error) {
-        console.error("Failed to initialize from localStorage", error);
-        toast({ title: 'Erreur de chargement', description: 'Impossible de synchroniser avec la salle.', variant: 'destructive'});
-    }
+        onDisconnect(playerRef).remove();
+        onDisconnect(ref(database, `rooms/${roomCode}/players`)).set(playersList.filter(p => p.id !== userId));
+    });
 
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === storageKey) {
-          try {
-            const newStateJSON = localStorage.getItem(storageKey);
-            if (newStateJSON) {
-                const newState = JSON.parse(newStateJSON);
-                dispatch({ type: 'SET_STATE', payload: newState });
-            }
-          } catch(e) {
-            console.error("Failed to parse state from storage", e)
-          }
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
+        unsubscribe();
+        const playerRef = ref(database, `rooms/${roomCode}/players/${userId}`);
+        set(playerRef, null);
     };
 
-  }, [roomCode, userNickname]);
+  }, [roomCode, userNickname, userId]);
+
 
   useEffect(() => {
     if (state.isLockdown && state.lockdownTimer > 0) {
       const timer = setInterval(() => {
-        wrappedDispatch({ type: 'TICK_LOCKDOWN' });
+        dispatchWithBroadcast({ type: 'TICK_LOCKDOWN' });
       }, 1000);
       return () => clearInterval(timer);
     }
   }, [state.isLockdown, state.lockdownTimer]);
 
-  const dispatchWithBroadcast = (action: Action) => {
-    const newState = reducer(state, action);
-    dispatch({ type: 'SET_STATE', payload: newState });
-    broadcastState(newState);
-  };
 
   return <GameContext.Provider value={{ state, dispatch: dispatchWithBroadcast }}>{children}</GameContext.Provider>;
 };

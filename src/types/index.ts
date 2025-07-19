@@ -29,7 +29,7 @@ export interface AppState {
 export type Action =
   | { type: 'SET_STATE'; payload: AppState }
   | { type: 'SET_INITIAL_STATE'; payload: { roomCode: string; user: Player, players: Player[], isAdmin: boolean } }
-  | { type: 'REMOVE_PLAYER'; payload: { playerId: string } }
+  | { type: 'UPDATE_PLAYERS'; payload: Player[] }
   | { type: 'START_GAME'; payload: { config: GameConfig } }
   | { type: 'SET_CONFIG'; payload: GameConfig }
   | { type: 'RESET_ROUND' }
