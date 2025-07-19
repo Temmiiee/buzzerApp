@@ -3,8 +3,6 @@
 import React, { createContext, useContext, useReducer, useEffect, type Dispatch, type ReactNode } from 'react';
 import { type AppState, type Action, type Player } from '@/types';
 import { useToast } from '@/hooks/use-toast';
-import { database, isFirebaseConfigured } from '@/lib/firebase';
-import { ref, onValue, set, onDisconnect, serverTimestamp, get, remove } from "firebase/database";
 
 const initialState: AppState = {
   roomCode: '',
@@ -91,102 +89,83 @@ export const GameProvider = ({ children, roomCode, userNickname }: { children: R
   const userId = React.useMemo(() => `user-${Math.random().toString(36).substring(2, 9)}`, []);
 
   const dispatchWithBroadcast = (action: Action) => {
-    if (!isFirebaseConfigured) {
-        console.error("Firebase is not configured. Cannot broadcast action.");
-        // We can also dispatch locally to see UI changes without network
-        const localState = reducer(state, action);
-        dispatch({ type: 'SET_STATE', payload: localState});
-        return;
-    }
     const newState = reducer(state, action);
-    const roomRef = ref(database, `rooms/${roomCode}`);
-    set(roomRef, newState);
+    try {
+      localStorage.setItem(`buzzer-room-${roomCode}`, JSON.stringify(newState));
+    } catch (error) {
+      console.error("Could not write to localStorage", error);
+    }
+    window.dispatchEvent(new StorageEvent('storage', { key: `buzzer-room-${roomCode}` }));
+    // Also update local state immediately
+    dispatch({ type: 'SET_STATE', payload: newState});
   };
-  
+
   useEffect(() => {
-    if (!isFirebaseConfigured) {
-      console.warn("Firebase is not configured. The app will run in offline mode.");
-      const user = { id: userId, name: userNickname };
-      const localState = {
+    if (!roomCode || !userNickname) return;
+    
+    const user = { id: userId, name: userNickname };
+    
+    const roomStateRaw = localStorage.getItem(`buzzer-room-${roomCode}`);
+    let roomState: AppState;
+
+    if (roomStateRaw) {
+      roomState = JSON.parse(roomStateRaw);
+      // Check if this player is already in the list, if not, add them
+      if (!roomState.players.some(p => p.id === userId)) {
+        roomState.players.push(user);
+      }
+    } else {
+      // First player creates the room
+      roomState = {
         ...initialState,
         roomCode,
-        user,
+        user: user,
         players: [user],
         isAdmin: true,
       };
-      dispatch({ type: 'SET_STATE', payload: localState });
-      return;
     }
     
-    if (!roomCode || !userNickname) return;
+    // Set user and isAdmin status for the current user
+    const amIAdmin = roomState.players[0]?.id === userId;
+    const finalState = { ...roomState, user, isAdmin: amIAdmin };
+
+    dispatch({ type: 'SET_STATE', payload: finalState });
+    localStorage.setItem(`buzzer-room-${roomCode}`, JSON.stringify(finalState));
     
-    const roomRef = ref(database, `rooms/${roomCode}`);
-    const user = { id: userId, name: userNickname };
-
-    const unsubscribe = onValue(roomRef, async (snapshot) => {
-        let roomData = snapshot.val() as AppState | null;
-
-        const playersRef = ref(database, `rooms/${roomCode}/players`);
-        const playerRef = ref(database, `rooms/${roomCode}/players/${userId}`);
-        
-        if (roomData) {
-             const playersSnap = await get(playersRef);
-             let playersList: Player[] = playersSnap.exists() ? Object.values(playersSnap.val()) : [];
-             if (!playersList.some(p => p.id === userId)) {
-                playersList.push(user);
-                await set(playersRef, playersList);
-             }
-             const amIAdmin = playersList[0]?.id === userId;
-             dispatch({ type: 'SET_STATE', payload: { ...roomData, user, isAdmin: amIAdmin, players: playersList } });
-        } else {
-            const initialRoomState: AppState = {
-                ...initialState,
-                roomCode,
-                user: user,
-                players: [user],
-                isAdmin: true,
-            };
-            await set(roomRef, initialRoomState);
-            dispatch({ type: 'SET_STATE', payload: initialRoomState });
-        }
-        
-        onDisconnect(playerRef).remove();
-    });
-
-    return () => {
-        unsubscribe();
-        const playerRef = ref(database, `rooms/${roomCode}/players/${userId}`);
-        remove(playerRef);
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === `buzzer-room-${roomCode}` && event.newValue) {
+        const newState = JSON.parse(event.newValue);
+        // Important: we keep the current user's info, as it's session-specific
+        const amIAdmin = newState.players[0]?.id === userId;
+        dispatch({ type: 'SET_STATE', payload: {...newState, user, isAdmin: amIAdmin } });
+      }
     };
 
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      // On unmount, remove player from the list
+      const currentStateRaw = localStorage.getItem(`buzzer-room-${roomCode}`);
+      if (currentStateRaw) {
+        const currentState = JSON.parse(currentStateRaw);
+        currentState.players = currentState.players.filter((p: Player) => p.id !== userId);
+        localStorage.setItem(`buzzer-room-${roomCode}`, JSON.stringify(currentState));
+        window.dispatchEvent(new StorageEvent('storage', { key: `buzzer-room-${roomCode}` }));
+      }
+    };
   }, [roomCode, userNickname, userId]);
 
 
   useEffect(() => {
-    if (state.isLockdown && state.lockdownTimer > 0 && isFirebaseConfigured) {
+    if (state.isLockdown && state.lockdownTimer > 0) {
       const timer = setInterval(() => {
         dispatchWithBroadcast({ type: 'TICK_LOCKDOWN' });
       }, 1000);
       return () => clearInterval(timer);
     }
-  }, [state.isLockdown, state.lockdownTimer, state, dispatchWithBroadcast]);
+  }, [state.isLockdown, state.lockdownTimer, state.config.lockdownPeriod]);
 
-
-  if (!isFirebaseConfigured) {
-    return (
-       <div className="flex h-screen w-full flex-col items-center justify-center bg-background p-4 text-center">
-          <h1 className="text-2xl font-bold text-destructive">Firebase non configuré</h1>
-          <p className="mt-2 max-w-md text-muted-foreground">
-            Veuillez mettre à jour le fichier <code className="font-mono bg-muted p-1 rounded">src/lib/firebase.ts</code> avec vos propres informations d'identification Firebase pour activer le mode multijoueur.
-          </p>
-          <div className="mt-4">
-            <GameContext.Provider value={{ state, dispatch: dispatchWithBroadcast }}>
-              {children}
-            </GameContext.Provider>
-          </div>
-       </div>
-    )
-  }
 
   return <GameContext.Provider value={{ state, dispatch: dispatchWithBroadcast }}>{children}</GameContext.Provider>;
 };
