@@ -28,7 +28,7 @@ export default function GameScreen() {
   };
 
   return (
-    <div className="container mx-auto p-4 flex flex-col h-screen">
+    <div className="container mx-auto p-4 flex flex-col h-screen pt-20">
       <header className="flex-shrink-0 mb-4">
         {state.isAdmin && <AdminControls />}
       </header>
