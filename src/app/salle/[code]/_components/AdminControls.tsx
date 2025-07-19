@@ -19,7 +19,7 @@ export default function AdminControls() {
         </Button>
         <Button onClick={() => dispatch({ type: 'END_GAME' })} variant="destructive">
             <XCircle className="mr-2 h-4 w-4" />
-            Terminer la partie
+            Terminez le round
         </Button>
     </div>
   );
