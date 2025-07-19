@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { type GameConfig } from '@/types';
+import { type GameConfig, type Player } from '@/types';
 import { useEffect } from 'react';
 
 const configSchema = z.object({
@@ -44,6 +44,10 @@ export default function GameConfigModal({ isOpen, onOpenChange }: GameConfigModa
     resolver: zodResolver(configSchema),
     defaultValues: state.config,
   });
+
+  const playersArray = state.players && typeof state.players === 'object' 
+    ? Object.values(state.players as Record<string, Player>) 
+    : Array.isArray(state.players) ? state.players : [];
 
   useEffect(() => {
     form.reset(state.config);
@@ -102,7 +106,7 @@ export default function GameConfigModal({ isOpen, onOpenChange }: GameConfigModa
                       <SelectValue placeholder="Sélectionnez un joueur" />
                     </SelectTrigger>
                     <SelectContent>
-                      {state.players.map(player => (
+                      {playersArray.map(player => (
                         <SelectItem key={player.id} value={player.id}>{player.name}</SelectItem>
                       ))}
                     </SelectContent>

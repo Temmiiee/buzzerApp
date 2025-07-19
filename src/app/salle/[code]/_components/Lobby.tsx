@@ -8,6 +8,7 @@ import { Users, Crown, Copy } from 'lucide-react';
 import PlayerList from './PlayerList';
 import GameConfigModal from './GameConfigModal';
 import { useToast } from '@/hooks/use-toast';
+import { type Player } from '@/types';
 
 export default function Lobby() {
   const { state } = useGame();
@@ -21,6 +22,10 @@ export default function Lobby() {
       description: 'Le code de la salle a été copié dans le presse-papiers.',
     });
   };
+
+  const playersArray = state.players && typeof state.players === 'object' 
+    ? Object.values(state.players as Record<string, Player>) 
+    : Array.isArray(state.players) ? state.players : [];
 
   return (
     <main className="container mx-auto flex min-h-screen flex-col items-center justify-center p-4">
@@ -42,7 +47,7 @@ export default function Lobby() {
           <div className="space-y-4">
             <h3 className="flex items-center gap-2 text-xl font-semibold">
               <Users />
-              <span>Joueurs ({state.players.length})</span>
+              <span>Joueurs ({playersArray.length})</span>
             </h3>
             <PlayerList />
             <div className="pt-4 text-center">

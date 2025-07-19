@@ -6,6 +6,7 @@ import Buzzer from './Buzzer';
 import AdminControls from './AdminControls';
 import { Card, CardContent } from '@/components/ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Player } from '@/types';
 
 export default function GameScreen() {
   const { state } = useGame();
@@ -19,7 +20,10 @@ export default function GameScreen() {
     }
     if (state.buzzerActive) {
         if (state.config.mode === 'single_buzz') {
-            const designatedPlayer = state.players.find(p => p.id === state.config.designatedPlayerId);
+            const playersArray = state.players && typeof state.players === 'object' 
+              ? Object.values(state.players as Record<string, Player>) 
+              : Array.isArray(state.players) ? state.players : [];
+            const designatedPlayer = playersArray.find(p => p.id === state.config.designatedPlayerId);
             return `${designatedPlayer?.name || 'Le joueur désigné'} peut buzzer...`;
         }
         return 'BUZZEZ !';

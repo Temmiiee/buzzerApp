@@ -4,14 +4,23 @@ import { useGame } from '@/contexts/GameContext';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Crown, ShieldCheck, Zap } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { type Player } from '@/types';
 
 export default function PlayerList() {
   const { state } = useGame();
 
-  const sortedPlayers = [...state.players].sort((a, b) => {
-    // Keep original admin first, then sort by name
-    if (state.players[0] && a.id === state.players[0].id) return -1;
-    if (state.players[0] && b.id === state.players[0].id) return 1;
+  // Convert players object to array
+  const playersArray = state.players && typeof state.players === 'object' 
+    ? Object.values(state.players as Record<string, Player>) 
+    : Array.isArray(state.players) ? state.players : [];
+
+  const adminId = playersArray.length > 0 ? Object.keys(state.players as Record<string, Player>)[0] : null;
+
+  const sortedPlayers = [...playersArray].sort((a, b) => {
+    if (adminId) {
+      if (a.id === adminId) return -1;
+      if (b.id === adminId) return 1;
+    }
     return a.name.localeCompare(b.name);
   });
 
@@ -21,7 +30,7 @@ export default function PlayerList() {
         {sortedPlayers.map((player) => {
           const isWinner = state.buzzerWinner?.id === player.id;
           const isYou = state.user.id === player.id;
-          const isAdmin = state.players[0]?.id === player.id;
+          const isAdmin = adminId === player.id;
           const isDesignated = state.config.mode === 'single_buzz' && state.config.designatedPlayerId === player.id;
 
           return (

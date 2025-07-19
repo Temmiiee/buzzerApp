@@ -17,7 +17,7 @@ export interface AppState {
   roomCode: string;
   user: Player;
   isAdmin: boolean;
-  players: Player[];
+  players: Player[] | Record<string, Player>;
   phase: GamePhase;
   config: GameConfig;
   buzzerActive: boolean;
