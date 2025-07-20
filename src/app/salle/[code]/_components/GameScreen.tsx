@@ -16,7 +16,11 @@ export default function GameScreen() {
       return `${state.buzzerWinner.name} a buzzé !`;
     }
     if (state.isLockdown) {
-      return `Période de verrouillage : ${state.lockdownTimer}s`;
+      const playersArray = state.players && typeof state.players === 'object' 
+        ? Object.values(state.players as Record<string, Player>) 
+        : Array.isArray(state.players) ? state.players : [];
+      const designatedPlayer = playersArray.find(p => p.id === state.config.designatedPlayerId);
+      return `${designatedPlayer?.name || 'Le joueur désigné'} peut buzzer maintenant ! (${state.lockdownTimer}s pour les autres)`;
     }
     if (state.buzzerActive) {
         if (state.config.mode === 'single_buzz') {
@@ -24,7 +28,7 @@ export default function GameScreen() {
               ? Object.values(state.players as Record<string, Player>) 
               : Array.isArray(state.players) ? state.players : [];
             const designatedPlayer = playersArray.find(p => p.id === state.config.designatedPlayerId);
-            return `${designatedPlayer?.name || 'Le joueur désigné'} peut buzzer...`;
+            return `${designatedPlayer?.name || 'Le joueur désigné'} peut buzzer à tout moment !`;
         }
         return 'BUZZEZ !';
     }

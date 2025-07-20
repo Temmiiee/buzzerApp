@@ -114,8 +114,19 @@ export class GameService {
           lockdownTimer: isLockdown ? action.payload.config.lockdownPeriod : 0,
         };
       }
-      case 'PRESS_BUZZER':
+      case 'PRESS_BUZZER': {
         if (!state.buzzerActive || state.buzzerWinner) return state;
+        
+        // Vérifier si le joueur peut buzzer
+        const isDesignatedPlayer = state.config.designatedPlayerId === action.payload.player.id;
+        const isLockdownActive = state.isLockdown && state.lockdownTimer > 0;
+        
+        // Le joueur désigné peut buzzer à tout moment
+        // Les autres joueurs doivent attendre la fin du verrouillage
+        if (isLockdownActive && !isDesignatedPlayer) {
+          return state; // Refuser le buzz
+        }
+        
         return {
           ...state,
           buzzerActive: false,
@@ -123,6 +134,7 @@ export class GameService {
           isLockdown: false,
           lockdownTimer: 0,
         };
+      }
       case 'RESET_ROUND': {
         const isLockdown = state.config.mode === 'single_buzz' && !!state.config.designatedPlayerId;
         return {
@@ -143,14 +155,13 @@ export class GameService {
         };
       case 'TICK_LOCKDOWN': {
         if (!state.isLockdown || state.lockdownTimer <= 0) {
-          return { ...state, isLockdown: false, lockdownTimer: 0, buzzerActive: true };
+          return { ...state, isLockdown: false, lockdownTimer: 0 };
         }
         const newTime = state.lockdownTimer - 1;
         return {
           ...state,
           lockdownTimer: newTime,
           isLockdown: newTime > 0,
-          buzzerActive: newTime <= 0,
         };
       }
       default:
