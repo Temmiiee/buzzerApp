@@ -27,9 +27,8 @@ export class HybridGameService {
       await this.connectRemote();
       return this.remoteService.getRoomState();
     } catch (error) {
-      console.log('Remote mode failed, falling back to local mode');
-      this.currentMode = 'fallback';
-      return this.connectLocal();
+      console.error('Remote mode failed, aborting (no local fallback in production):', error);
+      throw new Error('Impossible de se connecter au serveur distant. Veuillez réessayer plus tard.');
     }
   }
 
