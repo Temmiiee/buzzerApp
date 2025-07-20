@@ -2,11 +2,9 @@
 
 import React, { createContext, useContext, useReducer, useEffect, type Dispatch, type ReactNode } from 'react';
 import { type AppState, type Action, type Player } from '@/types';
-import { database, isFirebaseConfigured } from '@/lib/firebase';
-import { ref, onValue, set, onDisconnect, serverTimestamp, goOffline, goOnline } from 'firebase/database';
+import { getHybridGameService, type GameMode } from '@/lib/hybridGameService';
 import { useToast } from '@/hooks/use-toast';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Terminal } from 'lucide-react';
+import { Users, Wifi, Globe } from 'lucide-react';
 
 const initialState: AppState = {
   roomCode: '',
@@ -25,196 +23,182 @@ const initialState: AppState = {
   isLockdown: false,
 };
 
-const reducer = (state: AppState, action: Action): AppState => {
-  switch (action.type) {
-    case 'SET_STATE':
-        return { ...state, ...action.payload };
-    case 'START_GAME': {
-        const isLockdown = action.payload.config.mode === 'single_buzz' && !!action.payload.config.designatedPlayerId;
-        return {
-            ...state,
-            config: action.payload.config,
-            phase: 'game',
-            buzzerActive: true,
-            buzzerWinner: null,
-            isLockdown: isLockdown,
-            lockdownTimer: isLockdown ? action.payload.config.lockdownPeriod : 0,
-        };
-    }
-    case 'PRESS_BUZZER':
-        if (!state.buzzerActive || state.buzzerWinner) return state;
-        return {
-            ...state,
-            buzzerActive: false,
-            buzzerWinner: action.payload.player,
-            isLockdown: false,
-            lockdownTimer: 0,
-        };
-    case 'RESET_ROUND': {
-        const isLockdown = state.config.mode === 'single_buzz' && !!state.config.designatedPlayerId;
-        return {
-            ...state,
-            buzzerActive: true,
-            buzzerWinner: null,
-            phase: 'game',
-            isLockdown,
-            lockdownTimer: isLockdown ? state.config.lockdownPeriod : 0,
-        };
-    }
-    case 'END_GAME':
-        return {
-            ...state,
-            phase: 'lobby',
-            buzzerActive: false,
-            buzzerWinner: null,
-        }
-    case 'TICK_LOCKDOWN': {
-        if (!state.isLockdown || state.lockdownTimer <= 0) {
-            return { ...state, isLockdown: false, lockdownTimer: 0, buzzerActive: true };
-        }
-        const newTime = state.lockdownTimer - 1;
-        return {
-            ...state,
-            lockdownTimer: newTime,
-            isLockdown: newTime > 0,
-            buzzerActive: newTime <= 0,
-        };
-    }
-    default:
-      return state;
-  }
-};
-
 const GameContext = createContext<{ state: AppState; dispatch: Dispatch<Action> } | undefined>(undefined);
 
-const FirebaseWarning = () => (
-    <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-md w-full p-4 z-50">
-      <Alert>
-        <Terminal className="h-4 w-4" />
-        <AlertTitle>Configuration Firebase requise !</AlertTitle>
-        <AlertDescription>
-          Le mode multijoueur est désactivé. Veuillez configurer vos identifiants Firebase dans le fichier{' '}
-          <code className="font-mono text-sm font-semibold">src/lib/firebase.ts</code> pour jouer en ligne.
-          Le jeu fonctionne actuellement en mode hors ligne.
-        </AlertDescription>
-      </Alert>
-    </div>
-);
-
-export const GameProvider = ({ children, roomCode, userNickname }: { children: ReactNode; roomCode: string; userNickname: string }) => {
-  const [state, dispatch] = useReducer(reducer, initialState);
-  const { toast } = useToast();
-  const userId = React.useMemo(() => `user-${Math.random().toString(36).substring(2, 9)}`, []);
-  const [firebaseReady, setFirebaseReady] = React.useState(false);
-
-
-  const dispatchWithSync = (action: Action) => {
-    const newState = reducer(state, action);
-    if (database) {
-      const roomRef = ref(database, `rooms/${roomCode}`);
-      set(roomRef, newState);
-    } else {
-        // Fallback to localStorage if Firebase is not configured
-        localStorage.setItem(`buzzer-room-${roomCode}`, JSON.stringify(newState));
-        window.dispatchEvent(new StorageEvent('storage', { key: `buzzer-room-${roomCode}` }));
-        dispatch({type: 'SET_STATE', payload: newState})
+const ConnectionInfo = ({ mode }: { mode: GameMode }) => {
+  const getInfo = () => {
+    switch (mode) {
+      case 'remote':
+        return {
+          icon: <Globe className="h-4 w-4 text-green-600" />,
+          title: 'Mode Multijoueur en Ligne',
+          description: 'Connecté au serveur distant. Vos amis peuvent rejoindre depuis n\'importe où !',
+          color: 'green'
+        };
+      case 'local':
+        return {
+          icon: <Wifi className="h-4 w-4 text-blue-600" />,
+          title: 'Mode Multijoueur Local',
+          description: 'Partagez le lien avec vos amis sur le même réseau local.',
+          color: 'blue'
+        };
+      case 'fallback':
+        return {
+          icon: <Users className="h-4 w-4 text-yellow-600" />,
+          title: 'Mode Local (Serveur Indisponible)',
+          description: 'Le serveur distant est indisponible. Mode local activé.',
+          color: 'yellow'
+        };
     }
   };
 
+  const info = getInfo();
+  const bgColor = `bg-${info.color}-50`;
+  const borderColor = `border-${info.color}-200`;
+  const textColor = `text-${info.color}-800`;
+
+  return (
+    <div className={`fixed top-4 right-4 max-w-xs p-3 ${bgColor} border ${borderColor} rounded-lg shadow-sm`}>
+      <div className="flex items-center gap-2 mb-2">
+        {info.icon}
+        <h3 className={`font-semibold text-sm ${textColor}`}>{info.title}</h3>
+      </div>
+      <p className={`text-xs ${textColor.replace('800', '700')}`}>
+        {info.description}
+      </p>
+    </div>
+  );
+};
+
+export const GameProvider = ({ children, roomCode, userNickname }: { children: ReactNode; roomCode: string; userNickname: string }) => {
+  const [state, dispatch] = useReducer((state: AppState, action: Action): AppState => {
+    switch (action.type) {
+      case 'SET_STATE':
+        return { ...state, ...action.payload };
+      default:
+        return state;
+    }
+  }, initialState);
+  
+  const { toast } = useToast();
+  const userId = React.useMemo(() => `user-${Math.random().toString(36).substring(2, 9)}`, []);
+  const [gameService, setGameService] = React.useState<any>(null);
+  const [connectionMode, setConnectionMode] = React.useState<GameMode>('local');
+
+  // Initialize game service
   useEffect(() => {
     if (!roomCode || !userNickname) return;
-    
-    const user: Player = { id: userId, name: userNickname };
 
-    if (database) {
-        setFirebaseReady(true);
-        goOnline(database);
-        const roomRef = ref(database, `rooms/${roomCode}`);
-        const playerRef = ref(database, `rooms/${roomCode}/players/${userId}`);
+    const user: Player = { 
+      id: userId, 
+      name: userNickname,
+      lastSeen: Date.now()
+    };
 
-        const unsubscribe = onValue(roomRef, (snapshot) => {
-            const roomData = snapshot.val();
-            if (roomData) {
-                // Data exists, join the room
-                const amIAdmin = roomData.players ? Object.keys(roomData.players)[0] === userId : false;
-                dispatch({ type: 'SET_STATE', payload: { ...roomData, user, isAdmin: amIAdmin } });
-                set(playerRef, user);
-                onDisconnect(playerRef).remove();
-            } else {
-                // Room doesn't exist, create it
-                const newState = {
-                    ...initialState,
-                    roomCode,
-                    user,
-                    players: { [userId]: user },
-                    isAdmin: true,
-                };
-                set(roomRef, newState);
-                onDisconnect(playerRef).remove();
-            }
+    const service = getHybridGameService(roomCode, userId, user);
+    setGameService(service);
+
+    // Initialize the service
+    service.initialize().then((initialState) => {
+      const amIAdmin = initialState.players[0]?.id === userId;
+      const finalState = { ...initialState, user, isAdmin: amIAdmin };
+      dispatch({ type: 'SET_STATE', payload: finalState });
+      setConnectionMode(service.getCurrentMode());
+    }).catch((error) => {
+      console.error('Failed to initialize game service:', error);
+      toast({
+        title: "Erreur de connexion",
+        description: "Impossible de se connecter au serveur. Mode local activé.",
+        variant: "destructive"
+      });
+    });
+
+    // Subscribe to state changes
+    const unsubscribe = service.subscribe((newState: AppState) => {
+      const amIAdmin = newState.players[0]?.id === userId;
+      dispatch({ type: 'SET_STATE', payload: { ...newState, user, isAdmin: amIAdmin } });
+    });
+
+    // Subscribe to player events
+    const unsubscribePlayerEvents = service.subscribeToPlayerEvents(
+      (player: Player) => {
+        toast({
+          title: "Nouveau joueur",
+          description: `${player.name} a rejoint la partie`,
         });
-        
-        return () => {
-            unsubscribe();
-            const playerRef = ref(database, `rooms/${roomCode}/players/${userId}`);
-            set(playerRef, null); // remove player on unmount
-            goOffline(database);
-        };
-
-    } else {
-        // Firebase not configured, use localStorage fallback
-        console.warn("Firebase is not configured. Falling back to localStorage.");
-        const roomStateRaw = localStorage.getItem(`buzzer-room-${roomCode}`);
-        let roomState: AppState;
-
-        if (roomStateRaw) {
-          roomState = JSON.parse(roomStateRaw);
-          if (!roomState.players.some(p => p.id === userId)) {
-            roomState.players.push(user);
-          }
-        } else {
-          roomState = {
-            ...initialState,
-            roomCode,
-            user,
-            players: [user],
-            isAdmin: true,
-          };
+      },
+      (playerId: string) => {
+        const player = state.players.find(p => p.id === playerId);
+        if (player) {
+          toast({
+            title: "Joueur parti",
+            description: `${player.name} a quitté la partie`,
+          });
         }
-        
-        const amIAdmin = roomState.players[0]?.id === userId;
-        const finalState = { ...roomState, user, isAdmin: amIAdmin };
+      }
+    );
 
-        dispatch({ type: 'SET_STATE', payload: finalState });
-        localStorage.setItem(`buzzer-room-${roomCode}`, JSON.stringify(finalState));
-        
-        const handleStorageChange = (event: StorageEvent) => {
-          if (event.key === `buzzer-room-${roomCode}` && event.newValue) {
-            const newState = JSON.parse(event.newValue);
-            const amIAdmin = newState.players[0]?.id === userId;
-            dispatch({ type: 'SET_STATE', payload: {...newState, user, isAdmin: amIAdmin } });
+    // Subscribe to game actions
+    const unsubscribeGameActions = service.subscribeToGameActions((action: Action) => {
+      // Handle game actions from other players
+      if (action.type === 'PRESS_BUZZER') {
+        toast({
+          title: "Buzzer pressé !",
+          description: `${action.payload.player.name} a gagné !`,
+        });
+      }
+    });
+
+    // Update connection mode periodically
+    const modeInterval = setInterval(() => {
+      setConnectionMode(service.getCurrentMode());
+    }, 5000);
+
+    // Try to upgrade to remote mode periodically
+    const upgradeInterval = setInterval(() => {
+      if (service.getCurrentMode() !== 'remote') {
+        service.tryUpgradeToRemote().then((success) => {
+          if (success) {
+            setConnectionMode('remote');
+            toast({
+              title: "Connexion améliorée",
+              description: "Connecté au serveur distant pour un meilleur multijoueur !",
+            });
           }
-        };
+        });
+      }
+    }, 30000); // Try every 30 seconds
 
-        window.addEventListener('storage', handleStorageChange);
-        return () => window.removeEventListener('storage', handleStorageChange);
-    }
-  }, [roomCode, userNickname, userId]);
+    return () => {
+      unsubscribe();
+      unsubscribePlayerEvents();
+      unsubscribeGameActions();
+      clearInterval(modeInterval);
+      clearInterval(upgradeInterval);
+      service.destroy();
+    };
+  }, [roomCode, userNickname, userId, toast]);
 
-
+  // Handle lockdown timer
   useEffect(() => {
-    if (state.isLockdown && state.lockdownTimer > 0 && state.isAdmin) {
+    if (state.isLockdown && state.lockdownTimer > 0 && state.isAdmin && gameService) {
       const timer = setInterval(() => {
-        dispatchWithSync({ type: 'TICK_LOCKDOWN' });
+        gameService.dispatchAction({ type: 'TICK_LOCKDOWN' });
       }, 1000);
       return () => clearInterval(timer);
     }
-  }, [state.isLockdown, state.lockdownTimer, state.config.lockdownPeriod, state.isAdmin]);
+  }, [state.isLockdown, state.lockdownTimer, state.isAdmin, gameService]);
 
+  // Dispatch action through game service
+  const dispatchWithSync = (action: Action) => {
+    if (gameService) {
+      gameService.dispatchAction(action);
+    }
+  };
 
   return (
     <GameContext.Provider value={{ state, dispatch: dispatchWithSync }}>
-      {!isFirebaseConfigured() && !firebaseReady && <FirebaseWarning />}
+      <ConnectionInfo mode={connectionMode} />
       {children}
     </GameContext.Provider>
   );

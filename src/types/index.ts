@@ -1,6 +1,7 @@
 export interface Player {
   id: string;
   name: string;
+  lastSeen?: number; // timestamp for tracking player activity
 }
 
 export type GameMode = 'ffa' | 'single_buzz';
