@@ -236,6 +236,19 @@ app.get('/info', (req, res) => {
   });
 });
 
+// Endpoint admin pour cleanup
+app.post('/admin/cleanup', (req, res) => {
+  const token = req.query.token;
+  if (token !== process.env.ADMIN_TOKEN) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  // Déconnecte tous les sockets
+  io.disconnectSockets(true);
+  // Vide toutes les salles
+  rooms.clear();
+  res.json({ status: 'cleanup done' });
+});
+
 const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
