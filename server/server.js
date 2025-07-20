@@ -26,7 +26,10 @@ const gameReducer = (state, action) => {
     case 'SET_STATE':
       return { ...state, ...action.payload };
     case 'START_GAME': {
-      const isLockdown = action.payload.config.mode === 'single_buzz' && !!action.payload.config.designatedPlayerId;
+      const isFFA = action.payload.config.mode === 'ffa';
+      const isSingleBuzz = action.payload.config.mode === 'single_buzz' && !!action.payload.config.designatedPlayerId;
+      const isLockdown = isFFA || isSingleBuzz;
+      const lockdownPeriod = action.payload.config.lockdownPeriod || 5;
       return {
         ...state,
         config: action.payload.config,
@@ -34,7 +37,7 @@ const gameReducer = (state, action) => {
         buzzerActive: true,
         buzzerWinner: null,
         isLockdown: isLockdown,
-        lockdownTimer: isLockdown ? action.payload.config.lockdownPeriod : 0,
+        lockdownTimer: isLockdown ? lockdownPeriod : 0,
       };
     }
     case 'PRESS_BUZZER': {
@@ -59,14 +62,17 @@ const gameReducer = (state, action) => {
       };
     }
     case 'RESET_ROUND': {
-      const isLockdown = state.config.mode === 'single_buzz' && !!state.config.designatedPlayerId;
+      const isFFA = state.config.mode === 'ffa';
+      const isSingleBuzz = state.config.mode === 'single_buzz' && !!state.config.designatedPlayerId;
+      const isLockdown = isFFA || isSingleBuzz;
+      const lockdownPeriod = state.config.lockdownPeriod || 5;
       return {
         ...state,
         buzzerActive: true,
         buzzerWinner: null,
         phase: 'game',
         isLockdown,
-        lockdownTimer: isLockdown ? state.config.lockdownPeriod : 0,
+        lockdownTimer: isLockdown ? lockdownPeriod : 0,
       };
     }
     case 'END_GAME':
@@ -99,7 +105,9 @@ io.on('connection', (socket) => {
   // Join room
   socket.on('join-room', ({ roomCode, user }) => {
     socket.join(roomCode);
-    
+    // Stocker l'id du joueur et le code de la salle dans la socket
+    socket.data.userId = user.id;
+    socket.data.roomCode = roomCode;
     // Get or create room
     if (!rooms.has(roomCode)) {
       rooms.set(roomCode, {
@@ -117,21 +125,16 @@ io.on('connection', (socket) => {
         isLockdown: false,
       });
     }
-
     const room = rooms.get(roomCode);
-    
     // Add player if not already present
     const existingPlayer = room.players.find(p => p.id === user.id);
     if (!existingPlayer) {
       room.players.push({ ...user, lastSeen: Date.now() });
-      
       // Notify other players
       socket.to(roomCode).emit('player-joined', user);
     }
-
     // Send current room state to the joining player
     socket.emit('room-state', room);
-    
     console.log(`Player ${user.name} joined room ${roomCode}`);
   });
 
@@ -165,22 +168,21 @@ io.on('connection', (socket) => {
   // Handle disconnection
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    
-    // Find and remove player from all rooms
-    for (const [roomCode, room] of rooms.entries()) {
-      const playerIndex = room.players.findIndex(p => p.id === socket.id);
+    // Utiliser l'id du joueur et le code de la salle stockés dans la socket
+    const userId = socket.data.userId;
+    const roomCode = socket.data.roomCode;
+    if (userId && roomCode && rooms.has(roomCode)) {
+      const room = rooms.get(roomCode);
+      const playerIndex = room.players.findIndex(p => p.id === userId);
       if (playerIndex !== -1) {
         const removedPlayer = room.players.splice(playerIndex, 1)[0];
-        
         // Notify other players
         socket.to(roomCode).emit('player-left', removedPlayer.id);
-        
         // Clean up empty rooms
         if (room.players.length === 0) {
           rooms.delete(roomCode);
           console.log(`Room ${roomCode} deleted (empty)`);
         }
-        
         console.log(`Player ${removedPlayer.name} left room ${roomCode}`);
       }
     }

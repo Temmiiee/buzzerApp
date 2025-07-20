@@ -101,7 +101,10 @@ export class GameService {
       case 'SET_STATE':
         return { ...state, ...action.payload };
       case 'START_GAME': {
-        const isLockdown = action.payload.config.mode === 'single_buzz' && !!action.payload.config.designatedPlayerId;
+        const isFFA = action.payload.config.mode === 'ffa';
+        const isSingleBuzz = action.payload.config.mode === 'single_buzz' && !!action.payload.config.designatedPlayerId;
+        const isLockdown = isFFA || isSingleBuzz;
+        const lockdownPeriod = action.payload.config.lockdownPeriod || 5;
         return {
           ...state,
           config: action.payload.config,
@@ -109,7 +112,7 @@ export class GameService {
           buzzerActive: true,
           buzzerWinner: null,
           isLockdown: isLockdown,
-          lockdownTimer: isLockdown ? action.payload.config.lockdownPeriod : 0,
+          lockdownTimer: isLockdown ? lockdownPeriod : 0,
         };
       }
       case 'PRESS_BUZZER': {
@@ -134,14 +137,17 @@ export class GameService {
         };
       }
       case 'RESET_ROUND': {
-        const isLockdown = state.config.mode === 'single_buzz' && !!state.config.designatedPlayerId;
+        const isFFA = state.config.mode === 'ffa';
+        const isSingleBuzz = state.config.mode === 'single_buzz' && !!state.config.designatedPlayerId;
+        const isLockdown = isFFA || isSingleBuzz;
+        const lockdownPeriod = state.config.lockdownPeriod || 5;
         return {
           ...state,
           buzzerActive: true,
           buzzerWinner: null,
           phase: 'game',
           isLockdown,
-          lockdownTimer: isLockdown ? state.config.lockdownPeriod : 0,
+          lockdownTimer: isLockdown ? lockdownPeriod : 0,
         };
       }
       case 'END_GAME':
