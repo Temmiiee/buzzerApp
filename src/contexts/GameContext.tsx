@@ -70,6 +70,11 @@ const ConnectionInfo = ({ mode }: { mode: GameMode }) => {
   );
 };
 
+function getPlayersArray(players: Player[] | Record<string, Player>): Player[] {
+  if (Array.isArray(players)) return players;
+  return Object.values(players);
+}
+
 export const GameProvider = ({ children, roomCode, userNickname }: { children: ReactNode; roomCode: string; userNickname: string }) => {
   const [state, dispatch] = useReducer((state: AppState, action: Action): AppState => {
     switch (action.type) {
@@ -100,7 +105,8 @@ export const GameProvider = ({ children, roomCode, userNickname }: { children: R
 
     // Initialize the service
     service.initialize().then((initialState) => {
-      const amIAdmin = initialState.players[0]?.id === userId;
+      const playersArray = getPlayersArray(initialState.players);
+      const amIAdmin = playersArray[0]?.id === userId;
       const finalState = { ...initialState, user, isAdmin: amIAdmin };
       dispatch({ type: 'SET_STATE', payload: finalState });
       setConnectionMode(service.getCurrentMode());
@@ -115,7 +121,8 @@ export const GameProvider = ({ children, roomCode, userNickname }: { children: R
 
     // Subscribe to state changes
     const unsubscribe = service.subscribe((newState: AppState) => {
-      const amIAdmin = newState.players[0]?.id === userId;
+      const playersArray = getPlayersArray(newState.players);
+      const amIAdmin = playersArray[0]?.id === userId;
       dispatch({ type: 'SET_STATE', payload: { ...newState, user, isAdmin: amIAdmin } });
     });
 
@@ -128,7 +135,8 @@ export const GameProvider = ({ children, roomCode, userNickname }: { children: R
         });
       },
       (playerId: string) => {
-        const player = state.players.find(p => p.id === playerId);
+        const playersArray = getPlayersArray(state.players);
+        const player = playersArray.find((p) => p.id === playerId);
         if (player) {
           toast({
             title: "Joueur parti",
@@ -154,27 +162,11 @@ export const GameProvider = ({ children, roomCode, userNickname }: { children: R
       setConnectionMode(service.getCurrentMode());
     }, 5000);
 
-    // Try to upgrade to remote mode periodically
-    const upgradeInterval = setInterval(() => {
-      if (service.getCurrentMode() !== 'remote') {
-        service.tryUpgradeToRemote().then((success) => {
-          if (success) {
-            setConnectionMode('remote');
-            toast({
-              title: "Connexion améliorée",
-              description: "Connecté au serveur distant pour un meilleur multijoueur !",
-            });
-          }
-        });
-      }
-    }, 30000); // Try every 30 seconds
-
     return () => {
       unsubscribe();
       unsubscribePlayerEvents();
       unsubscribeGameActions();
       clearInterval(modeInterval);
-      clearInterval(upgradeInterval);
       service.destroy();
     };
   }, [roomCode, userNickname, userId, toast]);
