@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
-const ADMIN_TOKEN = process.env.NEXT_PUBLIC_ADMIN_TOKEN || 'SECRET'; // à définir dans .env.local
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const ADMIN_TOKEN = process.env.NEXT_PUBLIC_ADMIN_TOKEN || 'SECRET';
 
 export default function AdminPage() {
   const [info, setInfo] = useState<any>(null);
@@ -10,17 +11,17 @@ export default function AdminPage() {
   const [cleanupStatus, setCleanupStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/info')
+    fetch(`${API_URL}/info`)
       .then(res => res.json())
       .then(setInfo);
-    fetch('/health')
+    fetch(`${API_URL}/health`)
       .then(res => res.json())
       .then(setHealth);
   }, []);
 
   const handleCleanup = async () => {
     setCleanupStatus('Nettoyage en cours...');
-    const res = await fetch(`/admin/cleanup?token=${ADMIN_TOKEN}`, { method: 'POST' });
+    const res = await fetch(`${API_URL}/admin/cleanup?token=${ADMIN_TOKEN}`, { method: 'POST' });
     const data = await res.json();
     setCleanupStatus(data.status || data.error);
   };
