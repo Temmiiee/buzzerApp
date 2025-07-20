@@ -236,17 +236,29 @@ app.get('/info', (req, res) => {
   });
 });
 
-// Endpoint admin pour cleanup
+// Endpoint admin pour cleanup amélioré
 app.post('/admin/cleanup', (req, res) => {
   const token = req.query.token;
   if (token !== process.env.ADMIN_TOKEN) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
-  // Déconnecte tous les sockets
+  const before = rooms.size;
   io.disconnectSockets(true);
-  // Vide toutes les salles
   rooms.clear();
-  res.json({ status: 'cleanup done' });
+  const after = rooms.size;
+  console.log(`[ADMIN] Cleanup: before=${before}, after=${after}`);
+  res.json({ status: 'cleanup done', before, after });
+});
+
+// Endpoint pour voir toutes les salles
+app.get('/admin/rooms', (req, res) => {
+  const token = req.query.token;
+  if (token !== process.env.ADMIN_TOKEN) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  res.json({
+    rooms: Array.from(rooms.entries())
+  });
 });
 
 const PORT = process.env.PORT || 3001;
