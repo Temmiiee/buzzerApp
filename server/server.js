@@ -211,26 +211,8 @@ io.on('connection', (socket) => {
 
 // Cleanup inactive players every 30 seconds
 setInterval(() => {
-  const now = Date.now();
-  for (const [roomCode, room] of rooms.entries()) {
-    const activePlayers = room.players.filter(player => {
-      const lastSeen = player.lastSeen || now;
-      return (now - lastSeen) < 60000; // 60 seconds
-    });
-    
-    if (activePlayers.length !== room.players.length) {
-      room.players = activePlayers;
-      
-      // Notify remaining players about cleanup
-      io.to(roomCode).emit('room-state', room);
-      
-      // Clean up empty rooms
-      if (room.players.length === 0) {
-        rooms.delete(roomCode);
-        console.log(`Room ${roomCode} deleted (empty after cleanup)`);
-      }
-    }
-  }
+  // No automatic cleanup - players stay connected indefinitely
+  // This interval is kept for potential future features
 }, 30000);
 
 // Health check endpoint

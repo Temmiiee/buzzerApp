@@ -8,13 +8,6 @@ export const GAME_EVENTS = {
   GAME_ACTION: 'buzzer-game-action',
 } as const;
 
-// Custom event for cross-tab communication
-export class GameEvent extends CustomEvent {
-  constructor(type: string, detail: any) {
-    super(type, { detail, bubbles: true });
-  }
-}
-
 // Game service for localStorage-based multiplayer
 export class GameService {
   private roomCode: string;
@@ -38,9 +31,14 @@ export class GameService {
     
     if (existingState) {
       // Room exists, add player if not already present
-      const playerExists = existingState.players.some(p => p.id === user.id);
+      const playersArray = Array.isArray(existingState.players) ? existingState.players : Object.values(existingState.players);
+      const playerExists = playersArray.some((p: Player) => p.id === user.id);
       if (!playerExists) {
-        existingState.players.push(user);
+        if (Array.isArray(existingState.players)) {
+          existingState.players.push(user);
+        } else {
+          existingState.players[user.id] = user;
+        }
         this.updateRoomState(existingState);
       }
       return existingState;
@@ -172,8 +170,17 @@ export class GameService {
   // Add player to room
   addPlayer(player: Player): void {
     const state = this.getRoomState();
-    if (state && !state.players.some(p => p.id === player.id)) {
-      state.players.push(player);
+    if (!state) return;
+
+    const playersArray = Array.isArray(state.players) ? state.players : Object.values(state.players);
+    const playerExists = playersArray.some((p: Player) => p.id === player.id);
+    
+    if (!playerExists) {
+      if (Array.isArray(state.players)) {
+        state.players.push(player);
+      } else {
+        state.players[player.id] = player;
+      }
       this.updateRoomState(state);
       this.notifyPlayerJoin(player);
     }
@@ -182,11 +189,16 @@ export class GameService {
   // Remove player from room
   removePlayer(playerId: string): void {
     const state = this.getRoomState();
-    if (state) {
-      state.players = state.players.filter(p => p.id !== playerId);
-      this.updateRoomState(state);
-      this.notifyPlayerLeave(playerId);
+    if (!state) return;
+
+    if (Array.isArray(state.players)) {
+      state.players = state.players.filter((p: Player) => p.id !== playerId);
+    } else {
+      delete state.players[playerId];
     }
+    
+    this.updateRoomState(state);
+    this.notifyPlayerLeave(playerId);
   }
 
   // Subscribe to state changes
@@ -225,17 +237,29 @@ export class GameService {
 
   // Notify state change to other tabs
   private notifyStateChange(state: AppState): void {
-    window.dispatchEvent(new GameEvent(GAME_EVENTS.STATE_CHANGE, { state, roomCode: this.roomCode }));
+    const event = new CustomEvent(GAME_EVENTS.STATE_CHANGE, { 
+      detail: { state, roomCode: this.roomCode }, 
+      bubbles: true 
+    });
+    window.dispatchEvent(event);
   }
 
   // Notify player join
   private notifyPlayerJoin(player: Player): void {
-    window.dispatchEvent(new GameEvent(GAME_EVENTS.PLAYER_JOIN, { player, roomCode: this.roomCode }));
+    const event = new CustomEvent(GAME_EVENTS.PLAYER_JOIN, { 
+      detail: { player, roomCode: this.roomCode }, 
+      bubbles: true 
+    });
+    window.dispatchEvent(event);
   }
 
   // Notify player leave
   private notifyPlayerLeave(playerId: string): void {
-    window.dispatchEvent(new GameEvent(GAME_EVENTS.PLAYER_LEAVE, { playerId, roomCode: this.roomCode }));
+    const event = new CustomEvent(GAME_EVENTS.PLAYER_LEAVE, { 
+      detail: { playerId, roomCode: this.roomCode }, 
+      bubbles: true 
+    });
+    window.dispatchEvent(event);
   }
 
   // Setup storage event listener for cross-tab communication
@@ -258,7 +282,7 @@ export class GameService {
 
   // Setup custom event listeners
   private setupEventListeners(): void {
-    const handleGameEvent = (event: GameEvent) => {
+    const handleGameEvent = (event: CustomEvent) => {
       if (event.detail.roomCode !== this.roomCode) return;
 
       switch (event.type) {
@@ -288,21 +312,9 @@ export class GameService {
   // Start periodic sync to handle edge cases
   private startSyncInterval(): void {
     this.syncInterval = setInterval(() => {
-      const state = this.getRoomState();
-      if (state) {
-        // Clean up disconnected players (players not seen in last 30 seconds)
-        const now = Date.now();
-        const activePlayers = state.players.filter(player => {
-          const lastSeen = player.lastSeen || now;
-          return (now - lastSeen) < 30000; // 30 seconds
-        });
-        
-        if (activePlayers.length !== state.players.length) {
-          state.players = activePlayers;
-          this.updateRoomState(state);
-        }
-      }
-    }, 10000); // Check every 10 seconds
+      // No automatic cleanup - players stay connected indefinitely
+      // This interval is kept for potential future features
+    }, 60000); // Check every minute
   }
 
   // Cleanup
