@@ -114,7 +114,7 @@ export const GameProvider = ({ children, roomCode, userNickname }: { children: R
       console.error('Failed to initialize game service:', error);
       toast({
         title: "Erreur de connexion",
-        description: "Impossible de se connecter au serveur. Mode local activé.",
+        description: "Impossible de se connecter au serveur distant. Veuillez réessayer plus tard.",
         variant: "destructive"
       });
     });

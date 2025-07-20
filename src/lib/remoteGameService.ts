@@ -17,6 +17,7 @@ export class RemoteGameService {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private currentServerIndex = 0;
+  private currentState: AppState | null = null;
 
   constructor(roomCode: string, userId: string, user: Player) {
     this.roomCode = roomCode;
@@ -60,6 +61,7 @@ export class RemoteGameService {
       });
 
       this.socket.on('room-state', (state: AppState) => {
+        this.currentState = state;
         this.notifyStateChange(state);
         resolve(state);
       });
@@ -236,6 +238,10 @@ export class RemoteGameService {
   // Get current server URL
   getCurrentServer(): string {
     return SERVER_URLS[this.currentServerIndex] || 'Unknown';
+  }
+
+  getRoomState(): AppState | null {
+    return this.currentState;
   }
 }
 
