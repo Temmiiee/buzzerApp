@@ -3,7 +3,7 @@ import { type AppState, type Player, type Action } from '@/types';
 
 // Server configuration
 const SERVER_URLS = [
-  'https://buzzer-game-server.onrender.com', // Production server
+  'https://buzzer-game-server-ox2h.onrender.com', // Production server
   'http://localhost:3001', // Local development server
 ];
 

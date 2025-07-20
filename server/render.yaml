@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: buzzer-game-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    rootDir: server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000 
